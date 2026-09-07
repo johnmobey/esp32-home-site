@@ -100,6 +100,21 @@ void playTone(int freq, int duration) {
   delay(duration + 50);
 }
 
+void speakText(String text) {
+  for (int i = 0; i < text.length(); i++) {
+    char c = text[i];
+    if (c == ' ') {
+      delay(80);
+      continue;
+    }
+    int freq = 120 + ((c * 23) % 900);
+    int duration = 35 + ((c * 7) % 35);
+    tone(BUZZER_PIN, freq, duration);
+    delay(duration + 15);
+  }
+  noTone(BUZZER_PIN);
+}
+
 void triggerSound(String sound) {
   if (sound == "bomb") {
     for (int i = 800; i > 40; i = i * 0.75) {
@@ -162,7 +177,7 @@ void webSocketEvent(WStype_t type, uint8_t * payload, size_t length) {
         messages[1] = messages[0];
         messages[0] = fullMsg;
         scrollPos[0] = 0;
-        triggerSound("default");
+        speakText(text); // Talk out the message content!
       }
       else if (msg.startsWith("SOUND:")) {
         triggerSound(msg.substring(6));
@@ -185,6 +200,7 @@ void webSocketEvent(WStype_t type, uint8_t * payload, size_t length) {
       }
       else if (msg.startsWith("CAM:")) {
         displayMode = 5;
+        showingLeaderboard = false; // Force hide leaderboard if video starts
         lastCamFrameTime = millis();
         String hexData = msg.substring(4);
         if (hexData.length() == 2048) {
@@ -210,6 +226,7 @@ void webSocketEvent(WStype_t type, uint8_t * payload, size_t length) {
         messages[1] = messages[0];
         messages[0] = "[" + timeStr + "] Dino Score: " + String(score) + " by " + name;
         scrollPos[0] = 0;
+        speakText("New high score");
       }
       break;
     }
@@ -227,7 +244,7 @@ void setup() {
   
   configTime(gmtOffset_sec, daylightOffset_sec, ntpServer);
   
-  webSocket.beginSSL("eemogol.com", 443, "/");
+  webSocket.beginSSL("your-railway-app.up.railway.app", 443, "/");
   webSocket.onEvent(webSocketEvent);
   webSocket.setReconnectInterval(5000);
   
@@ -240,8 +257,9 @@ void loop() {
   if (displayMode == 4 && (millis() - lastDinoSync > 1500)) displayMode = 0;
   if (displayMode == 5 && (millis() - lastCamFrameTime > 2000)) displayMode = 0;
   
-  if (displayMode == 0 && !showingLeaderboard) {
-    if (millis() - lastMinuteCheck > 60000) {
+  // Leaderboard triggers every 5 minutes (300,000 ms), ONLY when webcam is NOT active
+  if (displayMode == 0 && displayMode != 5 && !showingLeaderboard) {
+    if (millis() - lastMinuteCheck > 300000) {
       showingLeaderboard = true;
       leaderboardTimer = millis();
     }
@@ -253,7 +271,11 @@ void loop() {
   
   u8g2.clearBuffer();
   
-  if (showingLeaderboard) {
+  // Webcam takes absolute priority if playing
+  if (displayMode == 5) {
+    u8g2.drawXBM(0, 0, 128, 64, webcamBitmap);
+  }
+  else if (showingLeaderboard) {
     u8g2.setFont(u8g2_font_6x10_tf);
     u8g2.drawStr(12, 10, "=== DINO LEADERBOARD ===");
     for (int i = 0; i < 5; i++) {
@@ -261,9 +283,6 @@ void loop() {
       sprintf(buf, "%d. %-4s ..... %3d", i + 1, leaderboard[i].name.c_str(), leaderboard[i].score);
       u8g2.drawStr(8, 22 + (i * 9), buf);
     }
-  }
-  else if (displayMode == 5) {
-    u8g2.drawXBM(0, 0, 128, 64, webcamBitmap);
   }
   else if (displayMode == 4) {
     u8g2.setFont(u8g2_font_6x10_tf);
