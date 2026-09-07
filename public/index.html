@@ -7,7 +7,7 @@
   body { font-family: sans-serif; text-align: center; background: #222; color: #fff; padding: 20px; }
   .box { background: #333; padding: 15px; border-radius: 10px; margin-bottom: 15px; max-width: 450px; margin-left: auto; margin-right: auto; }
   input[type=text] { padding: 10px; width: 65%; border-radius: 5px; border: none; }
-  button  { padding: 10px 15px; border-radius: 5px; border: none; cursor: pointer; font-weight: bold; margin: 4px; }
+  button { padding: 10px 15px; border-radius: 5px; border: none; cursor: pointer; font-weight: bold; margin: 4px; }
   .btn-send { background: #00e676; color: #000; }
   .btn-sound { background: #ff9800; color: #000; }
   .btn-img { background: #03a9f4; color: #fff; }
@@ -17,6 +17,14 @@
 </head>
 <body>
   <div id="status" style="color: red;">Connecting to Railway...</div>
+
+  <div class="box">
+    <h2>Webcam Stream</h2>
+    <video id="webcamFeed" autoplay playsinline width="128" height="64" style="display:none;"></video>
+    <canvas id="camCanvas" width="128" height="64" style="display:none;"></canvas>
+    <button id="camBtn" class="btn-img" onclick="toggleWebcam()">Start Webcam</button>
+    <p style="font-size: 11px; color: #aaa;">Streams live camera feed to OLED (~6 FPS)</p>
+  </div>
 
   <div class="box">
     <h2>Dino Game</h2>
@@ -68,6 +76,61 @@
     let text = document.getElementById("msgInput").value;
     sendAction('POST', text);
     document.getElementById("msgInput").value = "";
+  }
+
+  let camInterval = null;
+  let webcamActive = false;
+
+  function toggleWebcam() {
+    const video = document.getElementById('webcamFeed');
+    if (!webcamActive) {
+      navigator.mediaDevices.getUserMedia({ video: { width: 128, height: 64 } })
+        .then(stream => {
+          video.srcObject = stream;
+          video.play();
+          webcamActive = true;
+          document.getElementById('camBtn').innerText = "Stop Webcam";
+          camInterval = setInterval(sendWebcamFrame, 150);
+        })
+        .catch(err => alert("Webcam access denied or unavailable: " + err));
+    } else {
+      let stream = video.srcObject;
+      if (stream) stream.getTracks().forEach(track => track.stop());
+      video.srcObject = null;
+      clearInterval(camInterval);
+      webcamActive = false;
+      document.getElementById('camBtn').innerText = "Start Webcam";
+      sendAction('CAM_STOP', '');
+    }
+  }
+
+  function sendWebcamFrame() {
+    if (!webcamActive || !ws || ws.readyState !== WebSocket.OPEN) return;
+    const video = document.getElementById('webcamFeed');
+    const canvas = document.getElementById('camCanvas');
+    const ctx = canvas.getContext('2d');
+    
+    ctx.drawImage(video, 0, 0, 128, 64);
+    const imgData = ctx.getImageData(0, 0, 128, 64);
+    const pixels = imgData.data;
+    
+    let bytes = [];
+    for (let y = 0; y < 64; y++) {
+      for (let x = 0; x < 128; x += 8) {
+        let byte = 0;
+        for (let bit = 0; bit < 8; bit++) {
+          let pxIdx = ((y * 128) + (x + bit)) * 4;
+          let gray = (pixels[pxIdx] * 0.299 + pixels[pxIdx + 1] * 0.587 + pixels[pxIdx + 2] * 0.114);
+          if (gray < 128) {
+            byte |= (1 << bit);
+          }
+        }
+        bytes.push(byte);
+      }
+    }
+    
+    let hexString = bytes.map(b => b.toString(16).padStart(2, '0')).join('');
+    ws.send("CAM:" + hexString);
   }
 
   let canvas, ctx, dino, obstacles = [], score = 0, gamePlaying = false, gameInterval, speed = 4, lastSync = 0;
