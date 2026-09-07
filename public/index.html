@@ -1,133 +1,354 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>House Board & Dino Hub</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Chaos Board — ESP32 Control Deck</title>
 <style>
-  body { font-family: sans-serif; text-align: center; background: #222; color: #fff; padding: 20px; }
-  .box { background: #333; padding: 15px; border-radius: 10px; margin-bottom: 15px; max-width: 450px; margin-left: auto; margin-right: auto; }
-  input[type=text] { padding: 10px; width: 65%; border-radius: 5px; border: none; }
-  button { padding: 10px 15px; border-radius: 5px; border: none; cursor: pointer; font-weight: bold; margin: 4px; }
-  .btn-send { background: #00e676; color: #000; }
-  .btn-sound { background: #ff9800; color: #000; }
-  .btn-img { background: #03a9f4; color: #fff; }
-  canvas { background: #eee; display: block; margin: 10px auto; border-radius: 5px; cursor: pointer; }
-  #status { font-weight: bold; margin-bottom: 10px; font-size: 14px; }
+  :root {
+    --bg: #14161a; --panel: #1e2127; --panel2: #262a32; --line: #333945;
+    --txt: #e8eaf0; --dim: #8b93a3; --green: #00e676; --orange: #ff9800;
+    --blue: #03a9f4; --red: #ff5252; --purple: #b388ff;
+  }
+  * { box-sizing: border-box; }
+  body {
+    font-family: system-ui, sans-serif; background: var(--bg); color: var(--txt);
+    margin: 0; padding: 16px; text-align: center;
+  }
+  h1 { font-size: 22px; margin: 4px 0 2px; letter-spacing: 1px; }
+  .sub { color: var(--dim); font-size: 12px; margin-bottom: 12px; }
+  #statusBar {
+    display: flex; gap: 8px; justify-content: center; align-items: center;
+    margin-bottom: 14px; flex-wrap: wrap; font-size: 13px;
+  }
+  .badge {
+    padding: 4px 12px; border-radius: 20px; font-weight: bold; font-size: 12px;
+    background: var(--panel2); border: 1px solid var(--line);
+  }
+  .on  { color: var(--green); border-color: var(--green); }
+  .off { color: var(--red); border-color: var(--red); }
+  .grid {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
+    gap: 14px; max-width: 1100px; margin: 0 auto;
+  }
+  .box {
+    background: var(--panel); border: 1px solid var(--line); border-radius: 12px;
+    padding: 14px; text-align: left;
+  }
+  .box h2 { font-size: 14px; margin: 0 0 10px; color: var(--dim); text-transform: uppercase; letter-spacing: 1px; }
+  input[type=text] {
+    padding: 10px; width: 62%; border-radius: 6px; border: 1px solid var(--line);
+    background: var(--panel2); color: var(--txt); font-size: 14px;
+  }
+  button {
+    padding: 9px 13px; border-radius: 6px; border: 1px solid var(--line); cursor: pointer;
+    font-weight: bold; margin: 3px; font-size: 13px; color: var(--txt); background: var(--panel2);
+  }
+  button:active { transform: scale(0.96); }
+  .btn-send { background: var(--green); color: #000; border-color: transparent; }
+  .btn-sound{ background: var(--orange); color: #000; border-color: transparent; }
+  .btn-img  { background: var(--blue); color: #000; border-color: transparent; }
+  .btn-warn { background: var(--red); color: #fff; border-color: transparent; }
+  .btn-alt  { background: var(--purple); color: #000; border-color: transparent; }
+  .btn-on   { background: var(--green); color: #000; border-color: transparent; }
+  canvas { background: #0a0a0a; display: block; margin: 8px auto; border-radius: 6px; border: 1px solid var(--line); }
+  #dinoCanvas { cursor: pointer; touch-action: manipulation; }
+  #snakeCanvas { touch-action: none; }
+  .row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .hint { font-size: 11px; color: var(--dim); margin: 6px 0 0; }
+  .dpad { display: grid; grid-template-columns: repeat(3, 54px); gap: 6px; justify-content: center; margin-top: 8px; }
+  .dpad button { height: 46px; font-size: 18px; margin: 0; }
+  #toasts { position: fixed; bottom: 14px; right: 14px; display: flex; flex-direction: column; gap: 6px; z-index: 99; }
+  .toast {
+    background: var(--panel2); border: 1px solid var(--line); border-left: 3px solid var(--green);
+    padding: 8px 14px; border-radius: 6px; font-size: 13px; animation: pop .2s ease-out;
+  }
+  @keyframes pop { from { opacity: 0; transform: translateY(8px); } }
+  input[type=range] { width: 130px; accent-color: var(--green); }
+  .fps { font-size: 11px; color: var(--dim); }
+  kbd { background: var(--panel2); border: 1px solid var(--line); border-radius: 4px; padding: 1px 5px; font-size: 11px; }
 </style>
 </head>
 <body>
-  <div id="status" style="color: red;">Connecting to Railway...</div>
+  <h1>⚡ CHAOS BOARD</h1>
+  <div class="sub">ESP32 · 128×64 OLED · piezo terror</div>
 
-  <div class="box">
-    <h2>Webcam Stream</h2>
-    <video id="webcamFeed" autoplay playsinline width="128" height="64" style="display:none;"></video>
-    <canvas id="camCanvas" width="128" height="64" style="display:none;"></canvas>
-    <button id="camBtn" class="btn-img" onclick="toggleWebcam()">Start Webcam</button>
-    <p style="font-size: 11px; color: #aaa;">High-framerate server-compressed stream</p>
+  <div id="statusBar">
+    <span id="wsBadge" class="badge off">● Server: connecting…</span>
+    <span id="espBadge" class="badge off">● ESP32: unknown</span>
+    <span id="fpsBadge" class="badge">CAM 0 fps</span>
   </div>
 
-  <div class="box">
-    <h2>Dino Game</h2>
-    <canvas id="dinoCanvas" width="300" height="80"></canvas>
-    <button id="dinoBtn" class="btn-send" onclick="initDino()">Start Game</button>
-    <p style="font-size: 11px; color: #aaa;">Tap canvas or press Space to Jump</p>
+  <div class="grid">
+    <!-- Webcam -->
+    <div class="box">
+      <h2>Webcam Stream</h2>
+      <video id="webcamFeed" autoplay playsinline muted width="128" height="64" style="display:none;"></video>
+      <canvas id="camCanvas" width="128" height="64" style="display:none;"></canvas>
+      <div class="row">
+        <button id="camBtn" class="btn-img" onclick="toggleWebcam()">Start Webcam</button>
+        <span class="fps" id="camFps">0 fps sent</span>
+      </div>
+      <p class="hint">Bilinear + Bayer-dithered on the relay. Pauses when tab is hidden.</p>
+    </div>
+
+    <!-- Dino -->
+    <div class="box">
+      <h2>Dino Run</h2>
+      <canvas id="dinoCanvas" width="300" height="80"></canvas>
+      <div class="row">
+        <button id="dinoBtn" class="btn-send" onclick="initDino()">Start Game</button>
+        <span class="fps" id="dinoBest">Best: 0</span>
+      </div>
+      <p class="hint">Tap canvas or press <kbd>Space</kbd>. Score syncs to the OLED live.</p>
+    </div>
+
+    <!-- Snake -->
+    <div class="box">
+      <h2>Snake (on the ESP)</h2>
+      <canvas id="snakeCanvas" width="128" height="64"></canvas>
+      <div class="row">
+        <button class="btn-send" onclick="sendAction('SNAKE','START')">Start</button>
+        <button onclick="sendAction('SNAKE','STOP')">Stop</button>
+      </div>
+      <div class="dpad">
+        <span></span><button onclick="snakeDir(0,-1)">▲</button><span></span>
+        <button onclick="snakeDir(-1,0)">◀</button>
+        <button onclick="snakeDir(0,1)">▼</button>
+        <button onclick="snakeDir(1,0)">▶</button>
+      </div>
+      <p class="hint">Game logic runs on the ESP32 — this is just the D-pad. WASD/arrows work too.</p>
+    </div>
+
+    <!-- Pong -->
+    <div class="box">
+      <h2>Pong vs the ESP</h2>
+      <canvas id="pongCanvas" width="128" height="64"></canvas>
+      <div class="row">
+        <button class="btn-send" onclick="sendAction('PONG','START')">Start</button>
+        <button onclick="sendAction('PONG','STOP')">Stop</button>
+      </div>
+      <p class="hint">Move your mouse / finger over the canvas to control the right paddle. First to 5.</p>
+    </div>
+
+    <!-- Messages -->
+    <div class="box">
+      <h2>Post a Message</h2>
+      <form onsubmit="postMessage(event)" class="row">
+        <input type="text" id="msgInput" placeholder="Say something rude…" maxlength="60" required>
+        <button type="submit" class="btn-send">Send</button>
+      </form>
+      <div class="row" style="margin-top:8px;">
+        <button onclick="sendAction('INSULT','')">Insult Me</button>
+        <button onclick="sendAction('COMPLIMENT','')">Compliment Me</button>
+        <button onclick="sendAction('BALL','')">Magic 8-Ball</button>
+        <button onclick="sendAction('CLEAR','')">Clear</button>
+      </div>
+      <p class="hint">The ESP32 speaks every message in R2D2 beeps.</p>
+    </div>
+
+    <!-- Soundboard -->
+    <div class="box">
+      <h2>Soundboard</h2>
+      <div class="row">
+        <button class="btn-sound" onclick="sendAction('SOUND','bomb')">Bomb</button>
+        <button class="btn-sound" onclick="sendAction('SOUND','fart')">Fart</button>
+        <button class="btn-sound" onclick="sendAction('SOUND','mario')">Mario</button>
+        <button class="btn-sound" onclick="sendAction('SOUND','airfryer')">Airfryer</button>
+        <button class="btn-sound" onclick="sendAction('SOUND','trombone')">Trombone</button>
+        <button class="btn-sound" onclick="sendAction('SOUND','siren')">Siren</button>
+        <button class="btn-sound" onclick="sendAction('SOUND','dialup')">Dial-up</button>
+        <button class="btn-sound" onclick="sendAction('SOUND','applause')">Applause</button>
+        <button class="btn-sound" onclick="sendAction('SOUND','nyan')">Nyan</button>
+        <button class="btn-sound" onclick="sendAction('SOUND','doom')">Doom</button>
+        <button class="btn-sound" onclick="sendAction('SOUND','charge')">Charge!</button>
+        <button class="btn-sound" onclick="sendAction('SOUND','ohno')">Oh No</button>
+        <button class="btn-sound" onclick="sendAction('SOUND','win')">Win</button>
+        <button class="btn-sound" onclick="sendAction('SOUND','lose')">Lose</button>
+      </div>
+    </div>
+
+    <!-- Images & visuals -->
+    <div class="box">
+      <h2>Cast & Visuals</h2>
+      <div class="row">
+        <button class="btn-img" onclick="sendAction('IMG','1')">Poop</button>
+        <button class="btn-img" onclick="sendAction('IMG','2')">Derp</button>
+        <button class="btn-img" onclick="sendAction('IMG','3')">Eggplant</button>
+        <button id="matrixBtn" onclick="toggleMatrix()">Matrix Rain</button>
+        <button id="saverBtn" onclick="toggleSaver()">Screensaver</button>
+        <button id="rickBtn" onclick="toggleRick()">Rickroll</button>
+      </div>
+    </div>
+
+    <!-- Timer -->
+    <div class="box">
+      <h2>Countdown of Doom</h2>
+      <div class="row">
+        <input type="text" id="timerInput" placeholder="Seconds" style="width:90px;">
+        <button class="btn-send" onclick="startTimer()">Arm</button>
+        <button onclick="sendAction('TIMER','STOP')">Disarm</button>
+      </div>
+      <p class="hint">Big digits on the OLED, beeps at 5…4…3…2…1, then BOOM.</p>
+    </div>
+
+    <!-- Device settings -->
+    <div class="box">
+      <h2>Device</h2>
+      <div class="row">
+        <button id="muteBtn" onclick="toggleMute()">🔇 Mute</button>
+        <label class="fps">Brightness</label>
+        <input type="range" id="brightSlider" min="0" max="255" value="255"
+               oninput="sendAction('BRIGHT', this.value)">
+        <button id="chaosBtn" onclick="toggleChaos()">Chaos Mode</button>
+        <button onclick="sendAction('STATS','')">Stats</button>
+      </div>
+      <p class="hint">Mute & brightness persist on the ESP32 across reboots.</p>
+    </div>
+
+    <!-- Panic -->
+    <div class="box" style="border-color: var(--red);">
+      <h2 style="color: var(--red);">🚨 Do Not Press 🚨</h2>
+      <button class="btn-warn" style="font-size:16px; padding:14px 26px;" onclick="sendAction('PANIC','')">PANIC BUTTON</button>
+      <p class="hint">5 seconds of flashing FUCK + air-raid siren. Interrupts everything.</p>
+    </div>
   </div>
 
-  <div class="box">
-    <h2>Post a Message</h2>
-    <form onsubmit="postMessage(event)">
-      <input type="text" id="msgInput" placeholder="Say something..." required>
-      <button type="submit" class="btn-send">Send</button>
-    </form>
-  </div>
+  <p class="hint" style="margin-top:14px;">
+    Shortcuts: <kbd>M</kbd> mute · <kbd>P</kbd> panic · <kbd>S</kbd> snake · <kbd>G</kbd> dino ·
+    <kbd>R</kbd> rickroll · <kbd>X</kbd> matrix · <kbd>I</kbd> insult · <kbd>C</kbd> compliment · <kbd>B</kbd> 8-ball
+  </p>
 
-  <div class="box">
-    <h2>Soundboard</h2>
-    <button class="btn-sound" onclick="sendAction('SOUND', 'bomb')">Bomb Tick</button>
-    <button class="btn-sound" onclick="sendAction('SOUND', 'airfryer')">Airfryer</button>
-    <button class="btn-sound" onclick="sendAction('SOUND', 'fart')">Fart</button>
-    <button class="btn-sound" onclick="sendAction('SOUND', 'mario')">Mario</button>
-  </div>
-
-  <div class="box">
-    <h2>Cast Image</h2>
-    <button class="btn-img" onclick="sendAction('IMG', '1')">Poop</button>
-    <button class="btn-img" onclick="sendAction('IMG', '2')">Derp Face</button>
-    <button class="btn-img" onclick="sendAction('IMG', '3')">Eggplant</button>
-  </div>
+  <div id="toasts"></div>
 
 <script>
+  // ================================================================
+  // Connection
+  // ================================================================
   let ws;
-  const wsProtocol = window.location.protocol === 'https:' ? 'wss://' : 'ws://';
+  const wsProtocol = location.protocol === 'https:' ? 'wss://' : 'ws://';
+  let reconnectDelay = 1000;
+
+  function toast(msg) {
+    const t = document.createElement('div');
+    t.className = 'toast';
+    t.textContent = msg;
+    document.getElementById('toasts').appendChild(t);
+    setTimeout(() => t.remove(), 2600);
+  }
+
+  function setWsBadge(online) {
+    const b = document.getElementById('wsBadge');
+    b.textContent = online ? '● Server: online' : '● Server: offline — retrying…';
+    b.className = 'badge ' + (online ? 'on' : 'off');
+  }
+  function setEspBadge(online) {
+    const b = document.getElementById('espBadge');
+    b.textContent = online ? '● ESP32: online' : '● ESP32: offline';
+    b.className = 'badge ' + (online ? 'on' : 'off');
+  }
 
   function connectWS() {
-    ws = new WebSocket(wsProtocol + window.location.host);
-    ws.onopen = () => { document.getElementById("status").innerText = "Connected to eemogol.com!"; document.getElementById("status").style.color = "#00e676"; };
-    ws.onclose = () => { document.getElementById("status").innerText = "Disconnected! Retrying..."; document.getElementById("status").style.color = "red"; setTimeout(connectWS, 2000); };
+    ws = new WebSocket(wsProtocol + location.host);
+    ws.onopen = () => {
+      reconnectDelay = 1000;
+      setWsBadge(true);
+      toast('Connected to relay');
+    };
+    ws.onclose = () => {
+      setWsBadge(false);
+      setEspBadge(false);
+      setTimeout(connectWS, reconnectDelay);
+      reconnectDelay = Math.min(reconnectDelay * 2, 15000);
+    };
+    ws.onerror = () => ws.close();
+    ws.onmessage = (e) => {
+      try {
+        const d = JSON.parse(e.data);
+        if (d.t === 'esp') setEspBadge(d.online);
+      } catch (err) { /* device passthrough frames */ }
+    };
   }
   connectWS();
 
   function sendAction(type, val) {
-    if (ws && ws.readyState === WebSocket.OPEN) ws.send(type + ":" + val);
+    if (ws && ws.readyState === WebSocket.OPEN) ws.send(type + ':' + val);
+    else toast('Not connected!');
   }
 
   function postMessage(e) {
     e.preventDefault();
-    let text = document.getElementById("msgInput").value;
+    const input = document.getElementById('msgInput');
+    const text = input.value.trim();
+    if (!text) return;
     sendAction('POST', text);
-    document.getElementById("msgInput").value = "";
+    input.value = '';
   }
 
-  let camInterval = null;
-  let webcamActive = false;
+  // ================================================================
+  // Webcam — rAF paced, pauses when tab hidden
+  // ================================================================
+  let camActive = false, camRaf = null, lastCamSend = 0, camSent = 0, camFpsAt = 0;
 
   function toggleWebcam() {
     const video = document.getElementById('webcamFeed');
-    if (!webcamActive) {
-      navigator.mediaDevices.getUserMedia({ video: { width: 128, height: 64 } })
+    if (!camActive) {
+      navigator.mediaDevices.getUserMedia({ video: { width: { ideal: 320 }, height: { ideal: 240 }, facingMode: 'user' } })
         .then(stream => {
           video.srcObject = stream;
           video.play();
-          webcamActive = true;
-          document.getElementById('camBtn').innerText = "Stop Webcam";
-          camInterval = setInterval(sendWebcamFrame, 80); // ~12+ FPS target
+          camActive = true;
+          document.getElementById('camBtn').innerText = 'Stop Webcam';
+          camLoop();
         })
-        .catch(err => alert("Webcam access denied or unavailable: " + err));
+        .catch(err => toast('Webcam denied: ' + err.name));
     } else {
-      let stream = video.srcObject;
-      if (stream) stream.getTracks().forEach(track => track.stop());
+      const stream = video.srcObject;
+      if (stream) stream.getTracks().forEach(t => t.stop());
       video.srcObject = null;
-      clearInterval(camInterval);
-      webcamActive = false;
-      document.getElementById('camBtn').innerText = "Start Webcam";
+      if (camRaf) cancelAnimationFrame(camRaf);
+      camActive = false;
+      document.getElementById('camBtn').innerText = 'Start Webcam';
       sendAction('CAM_STOP', '');
     }
   }
 
-  function sendWebcamFrame() {
-    if (!webcamActive || !ws || ws.readyState !== WebSocket.OPEN) return;
+  function camLoop(ts) {
+    if (!camActive) return;
+    camRaf = requestAnimationFrame(camLoop);
+    if (document.hidden) return;
+    if (ts - lastCamSend < 50) return;          // ~20 fps cap
+    lastCamSend = ts;
     const video = document.getElementById('webcamFeed');
+    if (!video.videoWidth) return;
     const canvas = document.getElementById('camCanvas');
-    const ctx = canvas.getContext('2d');
-    
-    ctx.drawImage(video, 0, 0, 128, 64);
-    let dataUrl = canvas.toDataURL('image/jpeg', 0.5);
-    ws.send("CAM_FRAME:" + dataUrl);
+    canvas.getContext('2d').drawImage(video, 0, 0, 128, 64);
+    ws.send('CAM_FRAME:' + canvas.toDataURL('image/jpeg', 0.5));
+    camSent++;
+    if (ts - camFpsAt > 1000) {
+      document.getElementById('camFps').innerText = camSent + ' fps sent';
+      document.getElementById('fpsBadge').innerText = 'CAM ' + camSent + ' fps';
+      camSent = 0; camFpsAt = ts;
+    }
   }
 
-  let canvas, ctx, dino, obstacles = [], score = 0, gamePlaying = false, gameInterval, speed = 4, lastSync = 0;
+  // ================================================================
+  // Dino — rAF fixed-timestep, ground scroll, localStorage best
+  // ================================================================
+  let dinoCanvas, dctx, dino, obstacles = [], score = 0, gamePlaying = false,
+      dinoRaf = null, lastT = 0, acc = 0, speed = 4, lastSync = 0, groundOff = 0;
+  const STEP = 1000 / 60;
+  let bestScore = +(localStorage.getItem('dinoBest') || 0);
+  document.getElementById('dinoBest').innerText = 'Best: ' + bestScore;
 
   function initDino() {
-    canvas = document.getElementById("dinoCanvas");
-    ctx = canvas.getContext("2d");
-    dino = { x: 20, y: 52, w: 12, h: 16, vy: 0, gravity: 0.6, jump: -8, grounded: true };
-    obstacles = [];
-    score = 0;
-    speed = 4;
+    dinoCanvas = document.getElementById('dinoCanvas');
+    dctx = dinoCanvas.getContext('2d');
+    dino = { x: 20, y: 52, w: 12, h: 16, vy: 0, gravity: 0.6, jump: -8.2, grounded: true };
+    obstacles = []; score = 0; speed = 4; acc = 0; lastT = 0;
     gamePlaying = true;
-    document.getElementById("dinoBtn").innerText = "Restart Game";
-    if(gameInterval) clearInterval(gameInterval);
-    gameInterval = setInterval(updateDino, 20);
+    document.getElementById('dinoBtn').innerText = 'Restart Game';
+    if (!dinoRaf) { lastT = performance.now(); dinoRaf = requestAnimationFrame(updateDino); }
   }
 
   function jumpDino() {
@@ -135,59 +356,153 @@
     if (dino.grounded) { dino.vy = dino.jump; dino.grounded = false; }
   }
 
-  function updateDino() {
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
+  function dinoStep() {
     dino.vy += dino.gravity;
     dino.y += dino.vy;
     if (dino.y > 52) { dino.y = 52; dino.vy = 0; dino.grounded = true; }
-    
-    ctx.fillStyle = "#222";
-    ctx.fillRect(dino.x, dino.y, dino.w, dino.h);
-    
-    if (Math.random() < 0.02 && (obstacles.length === 0 || obstacles[obstacles.length-1].x < 200)) {
-      obstacles.push({ x: canvas.width, y: 54, w: 8, h: 14 });
+
+    if (Math.random() < 0.02 && (obstacles.length === 0 || obstacles[obstacles.length - 1].x < 200)) {
+      obstacles.push({ x: dinoCanvas.width, y: 54, w: 8, h: 14 });
     }
-    
     let nextObsX = -1;
     for (let i = obstacles.length - 1; i >= 0; i--) {
-      obstacles[i].x -= speed;
-      ctx.fillRect(obstacles[i].x, obstacles[i].y, obstacles[i].w, obstacles[i].h);
-      if (i === obstacles.length - 1) nextObsX = obstacles[i].x;
-      
-      if (dino.x < obstacles[i].x + obstacles[i].w && dino.x + dino.w > obstacles[i].x &&
-          dino.y < obstacles[i].y + obstacles[i].h && dino.y + dino.h > obstacles[i].y) {
-        gamePlaying = false;
-        clearInterval(gameInterval);
-        
-        let initials = prompt("Game Over! Enter 3 letters for leaderboard:", "");
-        initials = initials ? initials.substring(0, 3).toUpperCase() : "";
-        
-        if (ws && ws.readyState === WebSocket.OPEN) {
-          ws.send("GAMEOVER:" + Math.floor(score) + "," + initials);
-        }
-        document.getElementById("dinoBtn").innerText = "Play Again";
+      const o = obstacles[i];
+      o.x -= speed;
+      if (i === obstacles.length - 1) nextObsX = o.x;
+      if (dino.x < o.x + o.w && dino.x + dino.w > o.x &&
+          dino.y < o.y + o.h && dino.y + dino.h > o.y) {
+        gameOver(nextObsX);
+        return;
       }
-      
-      if (obstacles[i].x + obstacles[i].w < 0) {
+      if (o.x + o.w < 0) {
         obstacles.splice(i, 1);
         score += 10;
         if (score % 50 === 0) speed += 0.5;
       }
     }
-    
-    ctx.fillStyle = "#222";
-    ctx.font = "12px sans-serif";
-    ctx.fillText("Score: " + Math.floor(score), 220, 20);
-    
-    let now = Date.now();
-    if (now - lastSync > 60 && ws && ws.readyState === WebSocket.OPEN) {
-      lastSync = now;
-      ws.send(`SYNC:${Math.floor(dino.y)},${nextObsX},${Math.floor(score)}`);
-    }
+    groundOff = (groundOff + speed) % 8;
+    dino.nextObsX = nextObsX;
   }
 
-  window.addEventListener('keydown', function(e) { if(e.code === 'Space') { e.preventDefault(); jumpDino(); } });
-  document.getElementById("dinoCanvas").addEventListener('click', jumpDino);
+  function dinoDraw() {
+    dctx.clearRect(0, 0, dinoCanvas.width, dinoCanvas.height);
+    dctx.fillStyle = '#222';
+    dctx.fillRect(dino.x, dino.y, dino.w, dino.h);
+    obstacles.forEach(o => dctx.fillRect(o.x, o.y, o.w, o.h));
+    dctx.fillRect(0, 70, dinoCanvas.width, 2);
+    for (let x = -groundOff; x < dinoCanvas.width; x += 8) dctx.fillRect(x, 72, 4, 1);
+    dctx.font = '12px sans-serif';
+    dctx.fillText('Score: ' + Math.floor(score), 220, 20);
+  }
+
+  function updateDino(ts) {
+    dinoRaf = requestAnimationFrame(updateDino);
+    if (!gamePlaying) { dinoRaf = null; return; }
+    if (!lastT) lastT = ts;
+    acc += Math.min(ts - lastT, 100);
+    lastT = ts;
+    while (acc >= STEP) { dinoStep(); acc -= STEP; }
+    dinoDraw();
+  }
+
+  function gameOver(nextObsX) {
+    gamePlaying = false;
+    const final = Math.floor(score);
+    if (final > bestScore) {
+      bestScore = final;
+      localStorage.setItem('dinoBest', bestScore);
+      document.getElementById('dinoBest').innerText = 'Best: ' + bestScore;
+    }
+    const initials = (prompt('Game Over! Enter 3 letters for the leaderboard:', '') || '')
+      .substring(0, 3).toUpperCase();
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      ws.send('GAMEOVER:' + final + ',' + initials);
+      // keep the OLED spectating a moment so the death is witnessed
+      ws.send('SYNC:' + Math.floor(dino.y) + ',' + (nextObsX ?? -1) + ',' + final);
+    }
+    document.getElementById('dinoBtn').innerText = 'Play Again';
+  }
+
+  // ================================================================
+  // Snake D-pad + keyboard
+  // ================================================================
+  function snakeDir(dx, dy) {
+    sendAction('SNAKE', dy < 0 ? 'U' : dy > 0 ? 'D' : dx < 0 ? 'L' : 'R');
+  }
+
+  // ================================================================
+  // Pong paddle control (mouse / touch over canvas)
+  // ================================================================
+  const pongCanvas = document.getElementById('pongCanvas');
+  function pongMove(clientY) {
+    const r = pongCanvas.getBoundingClientRect();
+    const pct = Math.round(Math.max(0, Math.min(1, (clientY - r.top) / r.height)) * 100);
+    sendAction('PONG', pct);
+  }
+  pongCanvas.addEventListener('mousemove', e => pongMove(e.clientY));
+  pongCanvas.addEventListener('touchmove', e => { e.preventDefault(); pongMove(e.touches[0].clientY); }, { passive: false });
+
+  // ================================================================
+  // Toggles
+  // ================================================================
+  let matrixOn = false, saverOn = false, rickOn = false, muted = false, chaosOn = false;
+
+  function toggleMatrix() {
+    matrixOn = !matrixOn;
+    sendAction('MATRIX', matrixOn ? '1' : '0');
+    document.getElementById('matrixBtn').className = matrixOn ? 'btn-on' : '';
+  }
+  function toggleSaver() {
+    saverOn = !saverOn;
+    sendAction('SAVER', saverOn ? '1' : '0');
+    document.getElementById('saverBtn').className = saverOn ? 'btn-on' : '';
+  }
+  function toggleRick() {
+    rickOn = !rickOn;
+    sendAction('RICK', rickOn ? '1' : '0');
+    document.getElementById('rickBtn').className = rickOn ? 'btn-on' : '';
+    toast(rickOn ? 'You have been rickrolled 🎵' : 'Rickroll ended');
+  }
+  function toggleMute() {
+    muted = !muted;
+    sendAction('MUTE', muted ? '1' : '0');
+    document.getElementById('muteBtn').innerText = muted ? '🔊 Unmute' : '🔇 Mute';
+  }
+  function toggleChaos() {
+    chaosOn = !chaosOn;
+    sendAction('CHAOS', chaosOn ? '1' : '0');
+    document.getElementById('chaosBtn').className = chaosOn ? 'btn-warn' : '';
+    toast(chaosOn ? 'CHAOS ENGAGED 😈' : 'Chaos disabled');
+  }
+  function startTimer() {
+    const v = parseInt(document.getElementById('timerInput').value, 10);
+    if (!v || v <= 0) { toast('Enter seconds first!'); return; }
+    sendAction('TIMER', v);
+    toast('Timer armed: ' + v + 's');
+  }
+
+  // ================================================================
+  // Keyboard shortcuts
+  // ================================================================
+  window.addEventListener('keydown', e => {
+    if (e.target.tagName === 'INPUT') return;
+    switch (e.code) {
+      case 'Space':      e.preventDefault(); jumpDino(); break;
+      case 'KeyM':       toggleMute(); break;
+      case 'KeyP':       sendAction('PANIC', ''); break;
+      case 'KeyS':       sendAction('SNAKE', 'START'); break;
+      case 'KeyG':       initDino(); break;
+      case 'KeyR':       toggleRick(); break;
+      case 'KeyX':       toggleMatrix(); break;
+      case 'KeyI':       sendAction('INSULT', ''); break;
+      case 'KeyC':       sendAction('COMPLIMENT', ''); break;
+      case 'KeyB':       sendAction('BALL', ''); break;
+      case 'ArrowUp':    e.preventDefault(); snakeDir(0, -1); break;
+      case 'ArrowDown':  e.preventDefault(); snakeDir(0, 1); break;
+      case 'ArrowLeft':  e.preventDefault(); snakeDir(-1, 0); break;
+      case 'ArrowRight': e.preventDefault(); snakeDir(1, 0); break;
+    }
+  });
 </script>
 </body>
 </html>
