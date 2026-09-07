@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>House Board & Dino Hub</title>
+<style>
+  body { font-family: sans-serif; text-align: center; background: #222; color: #fff; padding: 20px; }
+  .box { background: #333; padding: 15px; border-radius: 10px; margin-bottom: 15px; max-width: 450px; margin-left: auto; margin-right: auto; }
+  input[type=text] { padding: 10px; width: 65%; border-radius: 5px; border: none; }
+  button { padding: 10px 15px; border-radius: 5px; border: none; cursor: pointer; font-weight: bold; margin: 4px; }
+  .btn-send { background: #00e676; color: #000; }
+  .btn-sound { background: #ff9800; color: #000; }
+  .btn-img { background: #03a9f4; color: #fff; }
+  canvas { background: #eee; display: block; margin: 10px auto; border-radius: 5px; cursor: pointer; }
+  #status { font-weight: bold; margin-bottom: 10px; font-size: 14px; }
+</style>
+</head>
+<body>
+  <div id="status" style="color: red;">Connecting to Railway...</div>
+
+  <div class="box">
+    <h2>Dino Game</h2>
+    <canvas id="dinoCanvas" width="300" height="80"></canvas>
+    <button id="dinoBtn" class="btn-send" onclick="initDino()">Start Game</button>
+    <p style="font-size: 11px; color: #aaa;">Tap canvas or press Space to Jump</p>
+  </div>
+
+  <div class="box">
+    <h2>Post a Message</h2>
+    <form onsubmit="postMessage(event)">
+      <input type="text" id="msgInput" placeholder="Say something..." required>
+      <button type="submit" class="btn-send">Send</button>
+    </form>
+  </div>
+
+  <div class="box">
+    <h2>Soundboard</h2>
+    <button class="btn-sound" onclick="sendAction('SOUND', 'bomb')">Bomb Tick</button>
+    <button class="btn-sound" onclick="sendAction('SOUND', 'airfryer')">Airfryer</button>
+    <button class="btn-sound" onclick="sendAction('SOUND', 'fart')">Fart</button>
+    <button class="btn-sound" onclick="sendAction('SOUND', 'mario')">Mario</button>
+  </div>
+
+  <div class="box">
+    <h2>Cast Image</h2>
+    <button class="btn-img" onclick="sendAction('IMG', '1')">Poop</button>
+    <button class="btn-img" onclick="sendAction('IMG', '2')">Derp Face</button>
+    <button class="btn-img" onclick="sendAction('IMG', '3')">Eggplant</button>
+  </div>
+
+<script>
+  let ws;
+  const wsProtocol = window.location.protocol === 'https:' ? 'wss://' : 'ws://';
+
+  function connectWS() {
+    ws = new WebSocket(wsProtocol + window.location.host);
+    ws.onopen = () => { document.getElementById("status").innerText = "Connected to eemogol.com!"; document.getElementById("status").style.color = "#00e676"; };
+    ws.onclose = () => { document.getElementById("status").innerText = "Disconnected! Retrying..."; document.getElementById("status").style.color = "red"; setTimeout(connectWS, 2000); };
+  }
+  connectWS();
+
+  function sendAction(type, val) {
+    if (ws && ws.readyState === WebSocket.OPEN) ws.send(type + ":" + val);
+  }
+
+  function postMessage(e) {
+    e.preventDefault();
+    let text = document.getElementById("msgInput").value;
+    sendAction('POST', text);
+    document.getElementById("msgInput").value = "";
+  }
+
+  let canvas, ctx, dino, obstacles = [], score = 0, gamePlaying = false, gameInterval, speed = 4, lastSync = 0;
+
+  function initDino() {
+    canvas = document.getElementById("dinoCanvas");
+    ctx = canvas.getContext("2d");
+    dino = { x: 20, y: 52, w: 12, h: 16, vy: 0, gravity: 0.6, jump: -8, grounded: true };
+    obstacles = [];
+    score = 0;
+    speed = 4;
+    gamePlaying = true;
+    document.getElementById("dinoBtn").innerText = "Restart Game";
+    if(gameInterval) clearInterval(gameInterval);
+    gameInterval = setInterval(updateDino, 20);
+  }
+
+  function jumpDino() {
+    if (!gamePlaying) { initDino(); return; }
+    if (dino.grounded) { dino.vy = dino.jump; dino.grounded = false; }
+  }
+
+  function updateDino() {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    dino.vy += dino.gravity;
+    dino.y += dino.vy;
+    if (dino.y > 52) { dino.y = 52; dino.vy = 0; dino.grounded = true; }
+    
+    ctx.fillStyle = "#222";
+    ctx.fillRect(dino.x, dino.y, dino.w, dino.h);
+    
+    if (Math.random() < 0.02 && (obstacles.length === 0 || obstacles[obstacles.length-1].x < 200)) {
+      obstacles.push({ x: canvas.width, y: 54, w: 8, h: 14 });
+    }
+    
+    let nextObsX = -1;
+    for (let i = obstacles.length - 1; i >= 0; i--) {
+      obstacles[i].x -= speed;
+      ctx.fillRect(obstacles[i].x, obstacles[i].y, obstacles[i].w, obstacles[i].h);
+      if (i === obstacles.length - 1) nextObsX = obstacles[i].x;
+      
+      if (dino.x < obstacles[i].x + obstacles[i].w && dino.x + dino.w > obstacles[i].x &&
+          dino.y < obstacles[i].y + obstacles[i].h && dino.y + dino.h > obstacles[i].y) {
+        gamePlaying = false;
+        clearInterval(gameInterval);
+        
+        let initials = prompt("Game Over! Enter 3 letters for leaderboard:", "");
+        initials = initials ? initials.substring(0, 3).toUpperCase() : "";
+        
+        if (ws && ws.readyState === WebSocket.OPEN) {
+          ws.send("GAMEOVER:" + Math.floor(score) + "," + initials);
+        }
+        document.getElementById("dinoBtn").innerText = "Play Again";
+      }
+      
+      if (obstacles[i].x + obstacles[i].w < 0) {
+        obstacles.splice(i, 1);
+        score += 10;
+        if (score % 50 === 0) speed += 0.5;
+      }
+    }
+    
+    ctx.fillStyle = "#222";
+    ctx.font = "12px sans-serif";
+    ctx.fillText("Score: " + Math.floor(score), 220, 20);
+    
+    let now = Date.now();
+    if (now - lastSync > 60 && ws && ws.readyState === WebSocket.OPEN) {
+      lastSync = now;
+      ws.send(`SYNC:${Math.floor(dino.y)},${nextObsX},${Math.floor(score)}`);
+    }
+  }
+
+  window.addEventListener('keydown', function(e) { if(e.code === 'Space') { e.preventDefault(); jumpDino(); } });
+  document.getElementById("dinoCanvas").addEventListener('click', jumpDino);
+</script>
+</body>
+</html>
