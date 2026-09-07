@@ -23,7 +23,7 @@
     <video id="webcamFeed" autoplay playsinline width="128" height="64" style="display:none;"></video>
     <canvas id="camCanvas" width="128" height="64" style="display:none;"></canvas>
     <button id="camBtn" class="btn-img" onclick="toggleWebcam()">Start Webcam</button>
-    <p style="font-size: 11px; color: #aaa;">Streams live camera feed to OLED (~6 FPS)</p>
+    <p style="font-size: 11px; color: #aaa;">High-framerate server-compressed stream</p>
   </div>
 
   <div class="box">
@@ -90,7 +90,7 @@
           video.play();
           webcamActive = true;
           document.getElementById('camBtn').innerText = "Stop Webcam";
-          camInterval = setInterval(sendWebcamFrame, 150);
+          camInterval = setInterval(sendWebcamFrame, 80); // ~12+ FPS target
         })
         .catch(err => alert("Webcam access denied or unavailable: " + err));
     } else {
@@ -111,26 +111,8 @@
     const ctx = canvas.getContext('2d');
     
     ctx.drawImage(video, 0, 0, 128, 64);
-    const imgData = ctx.getImageData(0, 0, 128, 64);
-    const pixels = imgData.data;
-    
-    let bytes = [];
-    for (let y = 0; y < 64; y++) {
-      for (let x = 0; x < 128; x += 8) {
-        let byte = 0;
-        for (let bit = 0; bit < 8; bit++) {
-          let pxIdx = ((y * 128) + (x + bit)) * 4;
-          let gray = (pixels[pxIdx] * 0.299 + pixels[pxIdx + 1] * 0.587 + pixels[pxIdx + 2] * 0.114);
-          if (gray < 128) {
-            byte |= (1 << bit);
-          }
-        }
-        bytes.push(byte);
-      }
-    }
-    
-    let hexString = bytes.map(b => b.toString(16).padStart(2, '0')).join('');
-    ws.send("CAM:" + hexString);
+    let dataUrl = canvas.toDataURL('image/jpeg', 0.5);
+    ws.send("CAM_FRAME:" + dataUrl);
   }
 
   let canvas, ctx, dino, obstacles = [], score = 0, gamePlaying = false, gameInterval, speed = 4, lastSync = 0;

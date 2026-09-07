@@ -163,6 +163,15 @@ void webSocketEvent(WStype_t type, uint8_t * payload, size_t length) {
     case WStype_CONNECTED:
       webSocket.sendTXT("ESP_AUTH");
       break;
+    case WStype_BIN:
+      // High-speed binary grid payload from Node.js server
+      if (length == 1024) {
+        displayMode = 5;
+        showingLeaderboard = false;
+        lastCamFrameTime = millis();
+        memcpy(webcamBitmap, payload, 1024);
+      }
+      break;
     case WStype_TEXT: {
       String msg = "";
       for(size_t i = 0; i < length; i++) msg += (char)payload[i];
@@ -177,7 +186,7 @@ void webSocketEvent(WStype_t type, uint8_t * payload, size_t length) {
         messages[1] = messages[0];
         messages[0] = fullMsg;
         scrollPos[0] = 0;
-        speakText(text); // Talk out the message content!
+        speakText(text);
       }
       else if (msg.startsWith("SOUND:")) {
         triggerSound(msg.substring(6));
@@ -197,18 +206,6 @@ void webSocketEvent(WStype_t type, uint8_t * payload, size_t length) {
         dinoY = msg.substring(5, f).toInt();
         dinoObsX = msg.substring(f + 1, s).toInt();
         dinoScore = msg.substring(s + 1).toInt();
-      }
-      else if (msg.startsWith("CAM:")) {
-        displayMode = 5;
-        showingLeaderboard = false; // Force hide leaderboard if video starts
-        lastCamFrameTime = millis();
-        String hexData = msg.substring(4);
-        if (hexData.length() == 2048) {
-          for (int i = 0; i < 1024; i++) {
-            String byteStr = hexData.substring(i * 2, i * 2 + 2);
-            webcamBitmap[i] = (uint8_t)strtol(byteStr.c_str(), NULL, 16);
-          }
-        }
       }
       else if (msg.startsWith("CAM_STOP")) {
         displayMode = 0;
@@ -244,7 +241,7 @@ void setup() {
   
   configTime(gmtOffset_sec, daylightOffset_sec, ntpServer);
   
-  webSocket.beginSSL("your-railway-app.up.railway.app", 443, "/");
+  webSocket.beginSSL("eemogol.com", 443, "/");
   webSocket.onEvent(webSocketEvent);
   webSocket.setReconnectInterval(5000);
   
@@ -271,7 +268,7 @@ void loop() {
   
   u8g2.clearBuffer();
   
-  // Webcam takes absolute priority if playing
+  // Webcam takes absolute priority if streaming
   if (displayMode == 5) {
     u8g2.drawXBM(0, 0, 128, 64, webcamBitmap);
   }
